@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>硬幣遊戲</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .game-container {
+            background-color: #1a6c35;
+            border-radius: 10px;
+            padding: 40px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+            position: relative;
+            width: 700px;
+            height: 400px;
+        }
+        .coin-area {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            padding: 20px;
+        }
+        .coin {
+            width: 80px;
+            height: 80px;
+            cursor: move;
+            position: absolute;
+            transition: transform 0.2s;
+            user-select: none;
+        }
+        .coin img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            transition: transform 0.3s;
+        }
+        .coin.dragging {
+            z-index: 100;
+        }
+        .coin img:hover {
+            transform: scale(1.05);
+        }
+        .controls {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .start-btn {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .reset-btn {
+            background-color: #f44336;
+            color: white;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        .title {
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 32px;
+        }
+        .instructions {
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            width: 700px;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">硬幣遊戲</h1>
+    
+    <div class="instructions">
+        <p>遊戲說明：</p>
+        <ul>
+            <li>初始狀態為4枚正面硬幣和6枚反面硬幣依序排列</li>
+            <li>點擊「開始」按鈕將硬幣隨機洗亂</li>
+            <li>點擊並拖曳硬幣可以移動位置</li>
+            <li>雙擊硬幣可以翻面（正面變反面，反面變正面）</li>
+            <li>點擊「重來」按鈕可以恢復到初始狀態</li>
+        </ul>
+    </div>
+    
+    <div class="game-container" id="gameContainer">
+        <!-- Coins will be added here by JavaScript -->
+    </div>
+    
+    <div class="controls">
+        <button class="start-btn" id="startBtn">開始</button>
+        <button class="reset-btn" id="resetBtn">重來</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const gameContainer = document.getElementById('gameContainer');
+            const startBtn = document.getElementById('startBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            
+            const coinImages = {
+                front: 'coin1.png', // 正面
+                back: 'coin2.png'   // 反面
+            };
+            
+            const totalCoins = 10;
+            const frontCoins = 4;   // 正面硬幣數
+            const backCoins = 6;    // 反面硬幣數
+            
+            let coins = [];
+            
+            // 初始化硬幣
+            function initializeCoins() {
+                gameContainer.innerHTML = '';
+                coins = [];
+                
+                // 依序排列硬幣（先4個正面，再6個反面）
+                const rows = 2;
+                const coinsPerRow = 5;
+                const coinWidth = 80;
+                const coinHeight = 80;
+                const startX = 100;
+                const startY = 100;
+                const gapX = 100;
+                const gapY = 120;
+                
+                for (let i = 0; i < totalCoins; i++) {
+                    const row = Math.floor(i / coinsPerRow);
+                    const col = i % coinsPerRow;
+                    
+                    const coinDiv = document.createElement('div');
+                    coinDiv.className = 'coin';
+                    
+                    const isFront = i < frontCoins;
+                    
+                    const coinImg = document.createElement('img');
+                    coinImg.src = isFront ? coinImages.front : coinImages.back;
+                    coinImg.alt = isFront ? '正面' : '反面';
+                    
+                    coinDiv.appendChild(coinImg);
+                    gameContainer.appendChild(coinDiv);
+                    
+                    // 位置計算
+                    const x = startX + col * gapX;
+                    const y = startY + row * gapY;
+                    
+                    coinDiv.style.left = `${x}px`;
+                    coinDiv.style.top = `${y}px`;
+                    
+                    coinDiv.dataset.type = isFront ? 'front' : 'back';
+                    
+                    // 將硬幣信息存儲起來
+                    coins.push({
+                        element: coinDiv,
+                        x: x,
+                        y: y,
+                        type: isFront ? 'front' : 'back'
+                    });
+                    
+                    // 雙擊翻面
+                    coinDiv.addEventListener('dblclick', () => {
+                        flipCoin(coinDiv);
+                    });
+                    
+                    // 拖拽功能
+                    makeDraggable(coinDiv);
+                }
+            }
+            
+            // 讓硬幣可拖拽
+            function makeDraggable(element) {
+                let offsetX, offsetY;
+                let isDragging = false;
+                
+                element.addEventListener('mousedown', (e) => {
+                    isDragging = true;
+                    element.classList.add('dragging');
+                    
+                    const rect = element.getBoundingClientRect();
+                    offsetX = e.clientX - rect.left;
+                    offsetY = e.clientY - rect.top;
+                    
+                    // 將點擊的硬幣置於頂層
+                    element.style.zIndex = '100';
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (!isDragging) return;
+                    
+                    // 計算新位置
+                    const x = e.clientX - offsetX;
+                    const y = e.clientY - offsetY;
+                    
+                    // 限制在遊戲容器內
+                    const containerRect = gameContainer.getBoundingClientRect();
+                    const coinRect = element.getBoundingClientRect();
+                    
+                    const minX = 0;
+                    const minY = 0;
+                    const maxX = containerRect.width - coinRect.width;
+                    const maxY = containerRect.height - coinRect.height;
+                    
+                    let newX = x - containerRect.left;
+                    let newY = y - containerRect.top;
+                    
+                    newX = Math.max(minX, Math.min(newX, maxX));
+                    newY = Math.max(minY, Math.min(newY, maxY));
+                    
+                    element.style.left = `${newX}px`;
+                    element.style.top = `${newY}px`;
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    if (!isDragging) return;
+                    
+                    isDragging = false;
+                    element.classList.remove('dragging');
+                    
+                    // 恢復正常的z-index
+                    setTimeout(() => {
+                        element.style.zIndex = '1';
+                    }, 200);
+                });
+            }
+            
+            // 翻轉硬幣
+            function flipCoin(coinDiv) {
+                const coinImg = coinDiv.querySelector('img');
+                const currentType = coinDiv.dataset.type;
+                
+                // 添加翻轉動畫
+                coinImg.style.transform = 'rotateY(90deg)';
+                
+                setTimeout(() => {
+                    if (currentType === 'front') {
+                        coinImg.src = coinImages.back;
+                        coinImg.alt = '反面';
+                        coinDiv.dataset.type = 'back';
+                    } else {
+                        coinImg.src = coinImages.front;
+                        coinImg.alt = '正面';
+                        coinDiv.dataset.type = 'front';
+                    }
+                    
+                    // 完成翻轉
+                    coinImg.style.transform = 'rotateY(0deg)';
+                }, 150);
+            }
+            
+            // 隨機打亂硬幣
+            function shuffleCoins() {
+                // 禁用按鈕，防止連續點擊
+                startBtn.disabled = true;
+                
+                // 保存當前硬幣位置
+                const originalPositions = coins.map(coin => ({
+                    x: parseInt(coin.element.style.left),
+                    y: parseInt(coin.element.style.top)
+                }));
+                
+                // 隨機重新排列位置
+                const shuffledPositions = [...originalPositions];
+                for (let i = shuffledPositions.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [shuffledPositions[i], shuffledPositions[j]] = [shuffledPositions[j], shuffledPositions[i]];
+                }
+                
+                // 為了實現動畫效果，我們使用一系列的setTimeout
+                const numberOfSteps = 15;
+                const stepDuration = 100;
+                
+                for (let step = 1; step <= numberOfSteps; step++) {
+                    setTimeout(() => {
+                        coins.forEach((coin, index) => {
+                            // 計算當前步驟的位置
+                            const startX = originalPositions[index].x;
+                            const startY = originalPositions[index].y;
+                            const endX = shuffledPositions[index].x;
+                            const endY = shuffledPositions[index].y;
+                            
+                            const progress = step / numberOfSteps;
+                            const currentX = startX + (endX - startX) * progress;
+                            const currentY = startY + (endY - startY) * progress;
+                            
+                            coin.element.style.left = `${currentX}px`;
+                            coin.element.style.top = `${currentY}px`;
+                        });
+                        
+                        // 完成後重新啟用按鈕
+                        if (step === numberOfSteps) {
+                            startBtn.disabled = false;
+                        }
+                    }, step * stepDuration);
+                }
+            }
+            
+            // 初始化
+            initializeCoins();
+            
+            // 事件處理
+            startBtn.addEventListener('click', shuffleCoins);
+            resetBtn.addEventListener('click', initializeCoins);
+        });
+    </script>
+</body>
+</html>
