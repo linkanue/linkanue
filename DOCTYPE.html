@@ -37,6 +37,8 @@
             position: absolute;
             transition: transform 0.2s;
             user-select: none;
+            touch-action: none; /* 防止觸摸時的瀏覽器默認行為 */
+            will-change: transform, left, top; /* 提高性能 */
         }
         .coin img {
             width: 100%;
@@ -44,6 +46,9 @@
             border-radius: 50%;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
             transition: transform 0.3s;
+            backface-visibility: hidden; /* 使翻轉更流暢 */
+            transform-style: preserve-3d;
+            draggable: false;
         }
         .coin.dragging {
             z-index: 100;
@@ -65,6 +70,7 @@
             font-weight: bold;
             transition: all 0.3s;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            -webkit-tap-highlight-color: transparent; /* 移除移動設備點擊高亮 */
         }
         .start-btn {
             background-color: #4CAF50;
@@ -91,6 +97,23 @@
             margin-bottom: 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             width: 700px;
+        }
+        
+        @media (max-width: 768px) {
+            .game-container {
+                width: 90%;
+                height: 350px;
+                padding: 20px;
+            }
+            
+            .coin {
+                width: 60px;
+                height: 60px;
+            }
+            
+            .instructions {
+                width: 90%;
+            }
         }
     </style>
 </head>
@@ -133,6 +156,7 @@
             const backCoins = 6;    // 反面硬幣數
             
             let coins = [];
+            let isShuffling = false;
             
             // 初始化硬幣
             function initializeCoins() {
@@ -161,6 +185,7 @@
                     const coinImg = document.createElement('img');
                     coinImg.src = isFront ? coinImages.front : coinImages.back;
                     coinImg.alt = isFront ? '正面' : '反面';
+                    coinImg.draggable = false; // 防止圖片被拖動而不是整個硬幣
                     
                     coinDiv.appendChild(coinImg);
                     gameContainer.appendChild(coinDiv);
@@ -187,17 +212,45 @@
                         flipCoin(coinDiv);
                     });
                     
+                    // 移動裝置雙擊支持
+                    let lastTap = 0;
+                    coinDiv.addEventListener('touchend', (e) => {
+                        const currentTime = new Date().getTime();
+                        const tapLength = currentTime - lastTap;
+                        if (tapLength < 500 && tapLength > 0) {
+                            flipCoin(coinDiv);
+                            e.preventDefault();
+                        }
+                        lastTap = currentTime;
+                    });
+                    
                     // 拖拽功能
                     makeDraggable(coinDiv);
                 }
             }
             
-            // 讓硬幣可拖拽
+            // 讓硬幣可拖拽 (支持觸摸設備)
             function makeDraggable(element) {
                 let offsetX, offsetY;
                 let isDragging = false;
                 
-                element.addEventListener('mousedown', (e) => {
+                // 鼠標拖拽
+                element.addEventListener('mousedown', startDrag);
+                
+                // 觸摸拖拽
+                element.addEventListener('touchstart', (e) => {
+                    const touch = e.touches[0];
+                    const mouseEvent = new MouseEvent('mousedown', {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY
+                    });
+                    startDrag(mouseEvent);
+                    e.preventDefault(); // 防止滾動
+                });
+                
+                function startDrag(e) {
+                    if (isShuffling) return; // 如果正在洗牌，則不允許拖拽
+                    
                     isDragging = true;
                     element.classList.add('dragging');
                     
@@ -207,9 +260,26 @@
                     
                     // 將點擊的硬幣置於頂層
                     element.style.zIndex = '100';
-                });
+                    
+                    // 添加過渡效果取消，使拖動更流暢
+                    element.style.transition = 'none';
+                }
                 
-                document.addEventListener('mousemove', (e) => {
+                // 鼠標移動
+                document.addEventListener('mousemove', moveDrag);
+                
+                // 觸摸移動
+                document.addEventListener('touchmove', (e) => {
+                    const touch = e.touches[0];
+                    const mouseEvent = new MouseEvent('mousemove', {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY
+                    });
+                    moveDrag(mouseEvent);
+                    e.preventDefault(); // 防止滾動
+                }, { passive: false });
+                
+                function moveDrag(e) {
                     if (!isDragging) return;
                     
                     // 計算新位置
@@ -233,23 +303,35 @@
                     
                     element.style.left = `${newX}px`;
                     element.style.top = `${newY}px`;
-                });
+                }
                 
-                document.addEventListener('mouseup', () => {
+                // 鼠標釋放
+                document.addEventListener('mouseup', endDrag);
+                
+                // 觸摸結束
+                document.addEventListener('touchend', endDrag);
+                document.addEventListener('touchcancel', endDrag);
+                
+                function endDrag() {
                     if (!isDragging) return;
                     
                     isDragging = false;
                     element.classList.remove('dragging');
                     
+                    // 恢復過渡效果
+                    element.style.transition = 'transform 0.2s';
+                    
                     // 恢復正常的z-index
                     setTimeout(() => {
                         element.style.zIndex = '1';
                     }, 200);
-                });
+                }
             }
             
             // 翻轉硬幣
             function flipCoin(coinDiv) {
+                if (isShuffling) return; // 如果正在洗牌，則不允許翻轉
+                
                 const coinImg = coinDiv.querySelector('img');
                 const currentType = coinDiv.dataset.type;
                 
@@ -272,9 +354,12 @@
                 }, 150);
             }
             
-            // 隨機打亂硬幣
+            // 隨機打亂硬幣 (使用GSAP風格的流暢動畫)
             function shuffleCoins() {
-                // 禁用按鈕，防止連續點擊
+                // 防止重複點擊
+                if (isShuffling) return;
+                
+                isShuffling = true;
                 startBtn.disabled = true;
                 
                 // 保存當前硬幣位置
@@ -290,33 +375,32 @@
                     [shuffledPositions[i], shuffledPositions[j]] = [shuffledPositions[j], shuffledPositions[i]];
                 }
                 
-                // 為了實現動畫效果，我們使用一系列的setTimeout
-                const numberOfSteps = 15;
-                const stepDuration = 100;
-                
-                for (let step = 1; step <= numberOfSteps; step++) {
+                // 為每個硬幣設置隨機延遲，使動畫更自然
+                coins.forEach((coin, index) => {
+                    const delay = Math.random() * 100;
+                    coin.element.style.transition = `all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) ${delay}ms`;
+                    
+                    // 先稍微上升
                     setTimeout(() => {
-                        coins.forEach((coin, index) => {
-                            // 計算當前步驟的位置
-                            const startX = originalPositions[index].x;
-                            const startY = originalPositions[index].y;
-                            const endX = shuffledPositions[index].x;
-                            const endY = shuffledPositions[index].y;
-                            
-                            const progress = step / numberOfSteps;
-                            const currentX = startX + (endX - startX) * progress;
-                            const currentY = startY + (endY - startY) * progress;
-                            
-                            coin.element.style.left = `${currentX}px`;
-                            coin.element.style.top = `${currentY}px`;
-                        });
-                        
-                        // 完成後重新啟用按鈕
-                        if (step === numberOfSteps) {
-                            startBtn.disabled = false;
-                        }
-                    }, step * stepDuration);
-                }
+                        coin.element.style.transform = 'translateY(-30px) scale(1.05)';
+                    }, 10 + delay);
+                    
+                    // 然後移動到新位置
+                    setTimeout(() => {
+                        coin.element.style.left = `${shuffledPositions[index].x}px`;
+                        coin.element.style.top = `${shuffledPositions[index].y}px`;
+                        coin.element.style.transform = 'translateY(0) scale(1)';
+                    }, 300 + delay);
+                });
+                
+                // 動畫結束後重新啟用按鈕
+                setTimeout(() => {
+                    coins.forEach(coin => {
+                        coin.element.style.transition = 'transform 0.2s';
+                    });
+                    startBtn.disabled = false;
+                    isShuffling = false;
+                }, 1200);
             }
             
             // 初始化
@@ -325,6 +409,17 @@
             // 事件處理
             startBtn.addEventListener('click', shuffleCoins);
             resetBtn.addEventListener('click', initializeCoins);
+            
+            // 添加觸摸事件支持
+            startBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                shuffleCoins();
+            });
+            
+            resetBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                initializeCoins();
+            });
         });
     </script>
 </body>
