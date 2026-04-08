@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>正方體到菱形十二面體轉換</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js for 3D rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f4f7f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+        #canvas-container { flex: 1; position: relative; width: 100%; min-height: 0; }
+        
+        /* Custom Slider Styling */
+        input[type=range]::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #2563eb;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 5px rgba(0,0,0,0.2);
+            transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+    </style>
+</head>
+<body>
+    <!-- 3D Canvas Area -->
+    <div id="canvas-container">
+        <!-- Color Legend -->
+        <div class="absolute top-6 left-6 bg-white/85 backdrop-blur p-4 rounded-xl shadow-sm border border-gray-100 hidden sm:block z-10 pointer-events-none">
+            <h3 class="text-sm font-bold text-gray-800 mb-3 border-b pb-1">六個角錐顏色圖例</h3>
+            <div class="grid grid-cols-2 gap-x-6 gap-y-3 text-xs font-medium text-gray-600">
+                <div class="flex items-center gap-2"><span class="w-4 h-4 rounded shadow-inner" style="background-color: #32CD32;"></span> 上 (Top)</div>
+                <div class="flex items-center gap-2"><span class="w-4 h-4 rounded shadow-inner" style="background-color: #FFD700;"></span> 下 (Bottom)</div>
+                <div class="flex items-center gap-2"><span class="w-4 h-4 rounded shadow-inner" style="background-color: #4169E1;"></span> 前 (Front)</div>
+                <div class="flex items-center gap-2"><span class="w-4 h-4 rounded shadow-inner" style="background-color: #FFB6C1;"></span> 後 (Back)</div>
+                <div class="flex items-center gap-2"><span class="w-4 h-4 rounded shadow-inner" style="background-color: #00FFFF;"></span> 左 (Left)</div>
+                <div class="flex items-center gap-2"><span class="w-4 h-4 rounded shadow-inner" style="background-color: #FF0000;"></span> 右 (Right)</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI Controls (Moved below canvas) -->
+    <div id="ui-container" class="w-full bg-white/95 backdrop-blur-md shadow-[0_-5px_25px_rgba(0,0,0,0.08)] border-t border-gray-200 p-5 md:p-6 z-10">
+        <div class="max-w-3xl mx-auto text-center">
+            <h1 class="text-xl md:text-2xl font-bold mb-1 text-gray-800 tracking-wide">正方體轉換為菱形十二面體</h1>
+            <p class="text-xs md:text-sm text-gray-500 mb-5">拖曳滑桿或點擊播放，觀察分割、分離、翻轉與合併的完整過程 (支援滑鼠旋轉視角)</p>
+            
+            <div class="relative w-full mb-6">
+                <!-- Slider -->
+                <input type="range" id="slider" min="0" max="3" step="0.01" value="0" class="w-full h-2.5 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                <div class="flex justify-between text-xs sm:text-sm text-gray-500 font-semibold mt-3">
+                    <span class="w-1/4 text-left">1. 正方體</span>
+                    <span class="w-1/4 text-center">2. 分離</span>
+                    <span class="w-1/4 text-center">3. 翻轉</span>
+                    <span class="w-1/4 text-right">4. 菱形十二面體</span>
+                </div>
+            </div>
+            
+            <div class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <p id="status-text" class="text-base md:text-lg text-blue-700 font-bold bg-blue-50 px-5 py-1.5 rounded-full border border-blue-100 shadow-inner w-full sm:w-auto">
+                    目前狀態：正方體
+                </p>
+                <button id="play-btn" class="bg-blue-600 text-white px-6 py-2.5 rounded-full shadow-md hover:bg-blue-700 hover:shadow-lg transition-all font-medium flex items-center justify-center gap-2 w-full sm:w-auto">
+                    <!-- Play Icon -->
+                    <svg id="icon-play" class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    <span id="play-text">自動播放</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Three.js 場景與相機設定 ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf4f7f6);
+        scene.fog = new THREE.Fog(0xf4f7f6, 10, 40); // 增加一點霧化效果增添深度感
+
+        const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+        camera.position.set(6, 6, 8);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 4;
+        controls.maxDistance = 25;
+
+        // --- 2. 光源設定 ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        dirLight.position.set(10, 20, 15);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        scene.add(dirLight);
+
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+        fillLight.position.set(-10, -10, -15);
+        scene.add(fillLight);
+
+        // 底部陰影承接面
+        const planeGeometry = new THREE.PlaneGeometry(30, 30);
+        const planeMaterial = new THREE.ShadowMaterial({ opacity: 0.15 });
+        const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+        plane.rotation.x = -Math.PI / 2;
+        plane.position.y = -4;
+        plane.receiveShadow = true;
+        scene.add(plane);
+
+        // --- 3. 建立幾何體 (角錐) ---
+        // 建立一個頂點在原點(0,-1,0)，底面在y=0的四角錐
+        function createPyramid(colorHex) {
+            const geometry = new THREE.BufferGeometry();
+            // 採用逆時針方向 (CCW) 確保法向量向外
+            const vertices = new Float32Array([
+                // 底面 Base (y=0, 面向 +y)
+                -1, 0, -1,   1, 0, 1,    1, 0, -1,
+                -1, 0, -1,  -1, 0, 1,    1, 0, 1,
+                
+                // 側面 Side 1 (Front: z=1)
+                0, -1, 0,    1, 0, 1,   -1, 0, 1,
+                // 側面 Side 2 (Right: x=1)
+                0, -1, 0,    1, 0, -1,   1, 0, 1,
+                // 側面 Side 3 (Back: z=-1)
+                0, -1, 0,   -1, 0, -1,   1, 0, -1,
+                // 側面 Side 4 (Left: x=-1)
+                0, -1, 0,   -1, 0, 1,   -1, 0, -1
+            ]);
+            
+            geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+            geometry.computeVertexNormals();
+            
+            const material = new THREE.MeshStandardMaterial({
+                color: colorHex,
+                roughness: 0.3,
+                metalness: 0.15,
+                side: THREE.DoubleSide,
+                polygonOffset: true,
+                polygonOffsetFactor: 1, 
+                polygonOffsetUnits: 1
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            
+            // 黑色邊線 (讓幾何結構更清晰)
+            const edges = new THREE.EdgesGeometry(geometry);
+            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x111111, linewidth: 1 }));
+            mesh.add(line);
+            
+            return mesh;
+        }
+
+        // 六個角錐的定義 (對應中心正方體的 6 個面)
+        const pyramidData = [
+            { name: 'Top',   dir: new THREE.Vector3(0, 1, 0),  rot: [0, 0, 0],          color: 0x32CD32 }, // 綠
+            { name: 'Bottom',dir: new THREE.Vector3(0, -1, 0), rot: [Math.PI, 0, 0],    color: 0xFFD700 }, // 黃
+            { name: 'Right', dir: new THREE.Vector3(1, 0, 0),  rot: [0, 0, -Math.PI/2], color: 0xFF0000 }, // 紅
+            { name: 'Left',  dir: new THREE.Vector3(-1, 0, 0), rot: [0, 0, Math.PI/2],  color: 0x00FFFF }, // 青
+            { name: 'Front', dir: new THREE.Vector3(0, 0, 1),  rot: [Math.PI/2, 0, 0],  color: 0x4169E1 }, // 藍
+            { name: 'Back',  dir: new THREE.Vector3(0, 0, -1), rot: [-Math.PI/2, 0, 0], color: 0xFFB6C1 }  // 粉
+        ];
+
+        const pyramids = [];
+        pyramidData.forEach(data => {
+            const mesh = createPyramid(data.color);
+            
+            // 初始旋轉使頂點指向中心
+            const euler = new THREE.Euler(data.rot[0], data.rot[1], data.rot[2]);
+            const q = new THREE.Quaternion().setFromEuler(euler);
+            mesh.quaternion.copy(q);
+            
+            scene.add(mesh);
+            pyramids.push({ mesh, dir: data.dir, q_init: q.clone() });
+        });
+
+        // --- 4. 動畫邏輯與 UI 互動 ---
+        const slider = document.getElementById('slider');
+        const statusText = document.getElementById('status-text');
+        
+        function getStatusText(t) {
+            if (t < 0.1) return "正方體 (Cube)";
+            if (t < 1.0) return "分離中... (Separating)";
+            if (t < 2.0) return "翻轉中... (Flipping)";
+            if (t < 2.9) return "合併中... (Merging)";
+            return "菱形十二面體 (Rhombic Dodecahedron)";
+        }
+
+        // 緩動函數讓動畫更柔和
+        const easeInOut = (x) => (1 - Math.cos(x * Math.PI)) / 2;
+
+        function updateScene() {
+            const t = parseFloat(slider.value);
+            statusText.innerText = `目前狀態：${getStatusText(t)}`;
+            
+            const d_max = 2.5; // 分離的最大距離
+            let current_d = 0;
+            let current_angle = 0;
+            
+            if (t <= 1) { 
+                // 階段 1: 原位到分離
+                current_d = d_max * easeInOut(t);
+                current_angle = 0;
+            } else if (t <= 2) { 
+                // 階段 2: 翻轉 (以自身 X 軸旋轉 180 度，讓頂點朝外)
+                current_d = d_max;
+                current_angle = Math.PI * easeInOut(t - 1);
+            } else { 
+                // 階段 3: 合併 (向中心移動直到基底相碰形成空心正方體)
+                current_d = d_max * easeInOut(3 - t);
+                current_angle = Math.PI;
+            }
+            
+            pyramids.forEach(p => {
+                // 更新位置 (dir 代表各面法向量，乘以 1 確保初始在表面位置)
+                p.mesh.position.copy(p.dir).multiplyScalar(1 + current_d);
+                
+                // 更新旋轉
+                p.mesh.quaternion.copy(p.q_init);
+                if (current_angle > 0) {
+                    p.mesh.rotateX(current_angle);
+                }
+            });
+        }
+
+        // --- 5. 自動播放控制 ---
+        let isPlaying = false;
+        let playSpeed = 0.008;
+        const playBtn = document.getElementById('play-btn');
+        const iconPlay = `<path d="M8 5v14l11-7z"/>`;
+        const iconPause = `<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>`;
+
+        function updatePlayButtonUI() {
+            const svg = document.getElementById('icon-play');
+            const text = document.getElementById('play-text');
+            if (isPlaying) {
+                svg.innerHTML = iconPause;
+                text.innerText = "暫停";
+                playBtn.classList.replace('bg-blue-600', 'bg-amber-500');
+                playBtn.classList.replace('hover:bg-blue-700', 'hover:bg-amber-600');
+            } else {
+                svg.innerHTML = iconPlay;
+                text.innerText = "自動播放";
+                playBtn.classList.replace('bg-amber-500', 'bg-blue-600');
+                playBtn.classList.replace('hover:bg-amber-600', 'hover:bg-blue-700');
+            }
+        }
+
+        playBtn.addEventListener('click', () => {
+            let val = parseFloat(slider.value);
+            if (!isPlaying) {
+                // 確保往未完成的方向播放
+                if (val >= 3) playSpeed = -0.008;
+                else if (val <= 0) playSpeed = 0.008;
+                isPlaying = true;
+            } else {
+                isPlaying = false;
+            }
+            updatePlayButtonUI();
+        });
+
+        // 綁定 Slider 事件
+        slider.addEventListener('input', () => {
+            if (isPlaying) {
+                isPlaying = false;
+                updatePlayButtonUI();
+            }
+            updateScene();
+        });
+
+        // --- 6. 渲染迴圈 ---
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (isPlaying) {
+                let val = parseFloat(slider.value);
+                val += playSpeed;
+                
+                if (val >= 3 && playSpeed > 0) {
+                    val = 3;
+                    isPlaying = false;
+                    playSpeed = -0.008; // 準備下次反向
+                    updatePlayButtonUI();
+                } else if (val <= 0 && playSpeed < 0) {
+                    val = 0;
+                    isPlaying = false;
+                    playSpeed = 0.008; // 準備下次正向
+                    updatePlayButtonUI();
+                }
+                
+                slider.value = val;
+                updateScene();
+            } else if (!isPlaying && parseFloat(slider.value) === 0) {
+                 // 稍微轉動整個場景增加互動感 (僅在正方體時)
+                 scene.rotation.y += 0.002;
+            } else {
+                 // 修正回歸原角度
+                 scene.rotation.y = THREE.MathUtils.lerp(scene.rotation.y, 0, 0.05);
+            }
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // --- 7. 視窗大小重整 ---
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        // 初始化
+        updateScene();
+        animate();
+    </script>
+</body>
+</html>
